@@ -162,6 +162,12 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             keyboardSwitcher.hideMemeSearch()
             return
         }
+        // never read (and send to Google) anything from password or incognito fields
+        val values = settings.current
+        if (values.mInputAttributes.mIsPasswordField || values.mIncognitoModeEnabled) {
+            keyboardSwitcher.showToast("Meme search is off in password/incognito fields", true)
+            return
+        }
         inputLogic.finishInput() // commit whatever word is being composed
         connection.beginBatchEdit()
         val selected = if (connection.hasSelection()) connection.getSelectedText(0)?.toString() else null
