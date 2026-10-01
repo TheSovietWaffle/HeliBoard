@@ -125,6 +125,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
                 }
                 return
             }
+            KeyCode.MEME_SEARCH -> return toggleMemeSearch()
             KeyCode.BACKGROUND_GATHERING_TEMP_OFF -> {
                 GestureDataGatheringSettings.tempDisableBackgroundGathering(latinIME.prefs())
                 BackgroundGatheringCache.clear()
@@ -153,6 +154,28 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun onTextInput(text: String?) = latinIME.onTextInput(text)
+
+    // fork: meme search. The selected text, or else the current line before the cursor, is the query.
+    // It gets removed from the text field, so you type "drake meme", press the button, and it's gone.
+    private fun toggleMemeSearch() {
+        if (keyboardSwitcher.isShowingMemeSearch) {
+            keyboardSwitcher.hideMemeSearch()
+            return
+        }
+        inputLogic.finishInput() // commit whatever word is being composed
+        connection.beginBatchEdit()
+        val selected = if (connection.hasSelection()) connection.getSelectedText(0)?.toString() else null
+        val query = if (!selected.isNullOrBlank()) {
+            connection.commitText("", 1)
+            selected.trim()
+        } else {
+            val line = connection.getTextBeforeCursor(200, 0)?.toString().orEmpty().substringAfterLast('\n')
+            if (line.isNotBlank()) connection.deleteTextBeforeCursor(line.length)
+            line.trim()
+        }
+        connection.endBatchEdit()
+        keyboardSwitcher.showMemeSearch(query)
+    }
 
     override fun onContent(content: InputContentInfoCompat) {
         val editorInfo = latinIME.currentInputEditorInfo

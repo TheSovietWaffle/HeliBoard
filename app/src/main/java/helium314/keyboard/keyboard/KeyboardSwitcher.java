@@ -34,6 +34,7 @@ import androidx.annotation.Nullable;
 
 import helium314.keyboard.event.Event;
 import helium314.keyboard.keyboard.clipboard.ClipboardHistoryView;
+import helium314.keyboard.keyboard.memes.MemeSearchView;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
 import helium314.keyboard.keyboard.internal.KeyboardState;
 import helium314.keyboard.keyboard.internal.LayoutDirective;
@@ -76,6 +77,7 @@ public final class KeyboardSwitcher {
     private SuggestionStripView mSuggestionStripView;
     private FrameLayout mStripContainer;
     private ClipboardHistoryView mClipboardHistoryView;
+    private MemeSearchView mMemeSearchView;
     private TextView mFakeToastView;
     private ImageView mBackgroundGatheringIndicator;
     private LatinIME mLatinIME;
@@ -225,6 +227,43 @@ public final class KeyboardSwitcher {
         mState.setLayout(LayoutDirective.Utility.CLIPBOARD);
     }
 
+    // ---- fork: meme search panel ----
+    public boolean isShowingMemeSearch() {
+        return mMemeSearchView != null && mMemeSearchView.isShown();
+    }
+
+    public void showMemeSearch(@NonNull String query) {
+        if (mMemeSearchView == null) return;
+        int height = mKeyboardView.getHeight();
+        if (height <= 0) height = mKeyboardViewWrapper.getHeight();
+        if (height <= 0) height = mEmojiPalettesView.getHeight();
+        mEmojiPalettesView.stopEmojiPalettes();
+        mEmojiPalettesView.setVisibility(View.GONE);
+        mEmojiTabStripView.setVisibility(View.GONE);
+        mClipboardHistoryView.stopClipboardHistory();
+        mClipboardHistoryView.setVisibility(View.GONE);
+        mClipboardStripScrollView.setVisibility(View.GONE);
+        mMainKeyboardFrame.setVisibility(View.VISIBLE);
+        mKeyboardView.setVisibility(View.GONE);
+        mMemeSearchView.start(query, height, mLatinIME.getCurrentInputEditorInfo());
+        mMemeSearchView.setVisibility(View.VISIBLE);
+    }
+
+    public void hideMemeSearch() {
+        // check visibility, not isShown(): after sending, the app may already have hidden our window
+        if (mMemeSearchView == null || mMemeSearchView.getVisibility() != View.VISIBLE) return;
+        stopMemeSearchView();
+        mKeyboardView.setVisibility(View.VISIBLE);
+        if (mLatinIME.hasSuggestionStripView())
+            mSuggestionStripView.setVisibility(View.VISIBLE);
+    }
+
+    private void stopMemeSearchView() {
+        if (mMemeSearchView == null) return;
+        mMemeSearchView.stop();
+        mMemeSearchView.setVisibility(View.GONE);
+    }
+
     public boolean isImeSuppressedByHardwareKeyboard(
             @NonNull final SettingsValues settingsValues,
             @NonNull final KeyboardSwitchState toggleState) {
@@ -251,6 +290,7 @@ public final class KeyboardSwitcher {
         mSuggestionStripView.setVisibility(stripVisibility);
         mClipboardHistoryView.setVisibility(View.GONE);
         mClipboardHistoryView.stopClipboardHistory();
+        stopMemeSearchView();
     }
 
     public void toggleLayout(@NonNull LayoutDirective.Utility layout, int autoCapsFlags, @Nullable RecapitalizeMode recapitalizeMode) {
@@ -314,6 +354,7 @@ public final class KeyboardSwitcher {
 
                 mClipboardHistoryView.stopClipboardHistory();
                 mClipboardHistoryView.setVisibility(View.GONE);
+                stopMemeSearchView();
 
                 mMainKeyboardFrame.setVisibility(View.VISIBLE);
                 mKeyboardView.setVisibility(View.VISIBLE);
@@ -475,7 +516,7 @@ public final class KeyboardSwitcher {
     }
 
     public boolean isShowingPopupKeysPanel() {
-        if (isShowingEmojiPalettes() || isShowingClipboardHistory()) {
+        if (isShowingEmojiPalettes() || isShowingClipboardHistory() || isShowingMemeSearch()) {
             return false;
         }
         return mKeyboardView.isShowingPopupKeysPanel();
@@ -490,6 +531,8 @@ public final class KeyboardSwitcher {
             return mEmojiPalettesView;
         } else if (isShowingClipboardHistory()) {
             return mClipboardHistoryView;
+        } else if (isShowingMemeSearch()) {
+            return mMemeSearchView;
         }
         return mKeyboardView;
     }
@@ -523,6 +566,7 @@ public final class KeyboardSwitcher {
         if (mClipboardHistoryView != null) {
             mClipboardHistoryView.stopClipboardHistory();
         }
+        stopMemeSearchView(); // free the WebView when the keyboard goes away
     }
 
     public void trimMemory() {
@@ -551,6 +595,10 @@ public final class KeyboardSwitcher {
         mMainKeyboardFrame = mCurrentInputView.findViewById(R.id.main_keyboard_frame);
         mEmojiPalettesView = mCurrentInputView.findViewById(R.id.emoji_palettes_view);
         mClipboardHistoryView = mCurrentInputView.findViewById(R.id.clipboard_history_view);
+        if (mMemeSearchView != null) mMemeSearchView.stop();
+        mMemeSearchView = mCurrentInputView.findViewById(R.id.meme_search_view);
+        mMemeSearchView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
+        mMemeSearchView.setOnCloseRequested(this::hideMemeSearch);
         mFakeToastView = mCurrentInputView.findViewById(R.id.fakeToast);
 
         mKeyboardViewWrapper = mCurrentInputView.findViewById(R.id.keyboard_view_wrapper);
@@ -657,6 +705,7 @@ public final class KeyboardSwitcher {
             mClipboardStripScrollView.setVisibility(View.GONE);
             mEmojiTabStripView.setVisibility(View.VISIBLE);
             mClipboardHistoryView.setVisibility(View.GONE);
+            stopMemeSearchView();
             mEmojiPalettesView.startEmojiPalettes(mKeyboardView.getKeyVisualAttribute(),
                 mLatinIME.getCurrentInputEditorInfo(), mLatinIME.mKeyboardActionListener);
             mEmojiPalettesView.setVisibility(View.VISIBLE);
@@ -678,6 +727,7 @@ public final class KeyboardSwitcher {
             mClipboardStripScrollView.post(() -> mClipboardStripScrollView.fullScroll(HorizontalScrollView.FOCUS_RIGHT));
             mClipboardStripScrollView.setVisibility(View.VISIBLE);
             mEmojiPalettesView.setVisibility(View.GONE);
+            stopMemeSearchView();
             mClipboardHistoryView.startClipboardHistory(mLatinIME.getClipboardHistoryManager(), mKeyboardView.getKeyVisualAttribute(),
                 mLatinIME.getCurrentInputEditorInfo(), mLatinIME.mKeyboardActionListener);
             mClipboardHistoryView.setVisibility(View.VISIBLE);
