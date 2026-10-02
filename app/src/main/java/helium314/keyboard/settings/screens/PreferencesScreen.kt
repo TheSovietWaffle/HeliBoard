@@ -131,6 +131,7 @@ fun createPreferencesSettings(context: Context) = listOf(
         val items = listOf(
             stringResource(R.string.key_sound_pack_soft) to KeySounds.PACK_SOFT,
             stringResource(R.string.key_sound_pack_thock) to KeySounds.PACK_THOCK,
+            stringResource(R.string.key_sound_pack_clicky) to KeySounds.PACK_CLICKY,
             stringResource(R.string.key_sound_pack_system) to KeySounds.PACK_SYSTEM,
         )
         val ctx = LocalContext.current

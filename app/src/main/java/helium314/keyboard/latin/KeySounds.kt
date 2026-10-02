@@ -12,26 +12,33 @@ import helium314.keyboard.latin.utils.prefs
 import kotlin.random.Random
 
 /**
- * Fork: custom key sound packs (synthesized by tools/keysounds/synth.py, free to use),
- * played through a SoundPool for low latency. "system" keeps Android's own click sounds.
+ * Fork: custom key sound packs, played through a SoundPool for low latency, at MEDIA volume.
+ * "system" keeps Android's own click sounds. Credits / licenses: tools/keysounds/CREDITS.md
+ * (Soft/Thock are synthesized; Clicky is from OpenClickSound by Nigh, CC BY-NC 4.0).
  */
 object KeySounds {
     const val PREF_KEY_SOUND_PACK = "key_sound_pack"
     const val PACK_SYSTEM = "system"
     const val PACK_SOFT = "soft"
     const val PACK_THOCK = "thock"
+    const val PACK_CLICKY = "clicky"
     const val DEFAULT_PACK = PACK_SOFT
     /** used when the volume slider is on "system default" */
     private const val DEFAULT_VOLUME = 0.55f
     private const val TAG = "KeySounds"
 
     private class Pack(val keys: IntArray, val space: Int, val delete: Int, val enter: Int)
+    /** normal key variants, then space, delete, enter */
+    private class PackRes(val keys: List<Int>, val space: Int, val delete: Int, val enter: Int)
 
     private val resources = mapOf(
-        PACK_SOFT to listOf(R.raw.keysound_soft_key_1, R.raw.keysound_soft_key_2, R.raw.keysound_soft_key_3,
+        PACK_SOFT to PackRes(listOf(R.raw.keysound_soft_key_1, R.raw.keysound_soft_key_2, R.raw.keysound_soft_key_3),
             R.raw.keysound_soft_space, R.raw.keysound_soft_delete, R.raw.keysound_soft_enter),
-        PACK_THOCK to listOf(R.raw.keysound_thock_key_1, R.raw.keysound_thock_key_2, R.raw.keysound_thock_key_3,
+        PACK_THOCK to PackRes(listOf(R.raw.keysound_thock_key_1, R.raw.keysound_thock_key_2, R.raw.keysound_thock_key_3),
             R.raw.keysound_thock_space, R.raw.keysound_thock_delete, R.raw.keysound_thock_enter),
+        PACK_CLICKY to PackRes(listOf(R.raw.keysound_clicky_key_1, R.raw.keysound_clicky_key_2,
+            R.raw.keysound_clicky_key_3, R.raw.keysound_clicky_key_4),
+            R.raw.keysound_clicky_space, R.raw.keysound_clicky_delete, R.raw.keysound_clicky_enter),
     )
 
     private var soundPool: SoundPool? = null
@@ -51,18 +58,18 @@ object KeySounds {
         if (wanted == loadedPackName) return
         release()
         loadedPackName = wanted
-        val ids = resources[wanted] ?: return // system pack: nothing to load
+        val res = resources[wanted] ?: return // system pack: nothing to load
         try {
             val pool = SoundPool.Builder()
                 .setMaxStreams(4)
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA) // follows the media volume
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build())
                 .build()
-            val loaded = ids.map { pool.load(context, it, 1) }
             soundPool = pool
-            pack = Pack(intArrayOf(loaded[0], loaded[1], loaded[2]), loaded[3], loaded[4], loaded[5])
+            pack = Pack(res.keys.map { pool.load(context, it, 1) }.toIntArray(),
+                pool.load(context, res.space, 1), pool.load(context, res.delete, 1), pool.load(context, res.enter, 1))
         } catch (e: Exception) {
             Log.w(TAG, "could not load key sounds, falling back to system sounds", e)
             release()

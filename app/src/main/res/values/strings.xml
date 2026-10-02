@@ -354,6 +354,7 @@
     <string name="key_sound_pack" translatable="false">Key sound</string>
     <string name="key_sound_pack_soft" translatable="false">Soft</string>
     <string name="key_sound_pack_thock" translatable="false">Thock</string>
+    <string name="key_sound_pack_clicky" translatable="false">Clicky (real switch · OpenClickSound by Nigh, CC BY-NC)</string>
     <string name="key_sound_pack_system" translatable="false">System (old)</string>
     <string name="clear_clipboard" tools:keep="@string/clear_clipboard">Clear clipboard</string>
     <string name="voice" tools:keep="@string/voice">Voice input</string>
