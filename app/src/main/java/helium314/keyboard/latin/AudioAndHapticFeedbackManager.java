@@ -104,6 +104,12 @@ public final class AudioAndHapticFeedbackManager {
         mAudioManager.playSoundEffect(sound, mSettingsValues.mKeypressSoundVolume);
     }
 
+    /** fork: "finger up" sound of the key sound pack (if it has one) */
+    public void performReleaseAudioFeedback(final int code) {
+        if (!mSoundOn || mSettingsValues == null) return;
+        KeySounds.playRelease(code, mSettingsValues.mKeypressSoundVolume);
+    }
+
     public void performHapticFeedback(final View viewToPerformHapticFeedbackOn, final HapticEvent hapticEvent) {
         if (!mSettingsValues.mVibrateOn || (mDoNotDisturb && !mSettingsValues.mVibrateInDndMode)) {
             return;

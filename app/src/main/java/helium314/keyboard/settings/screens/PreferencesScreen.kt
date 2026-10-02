@@ -21,6 +21,7 @@ import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.locale
 import helium314.keyboard.latin.utils.prefs
+import helium314.keyboard.settings.preferences.CustomKeySoundPreference
 import helium314.keyboard.settings.preferences.ListPreference
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.preferences.ReorderSwitchPreference
@@ -60,6 +61,8 @@ fun PreferencesScreen(
         Settings.PREF_SOUND_ON,
         if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
             KeySounds.PREF_KEY_SOUND_PACK else null,
+        *(if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON)
+            && KeySounds.currentPack(prefs) == KeySounds.PACK_CUSTOM) KeySounds.CUSTOM_SLOTS.toTypedArray() else emptyArray()),
         if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
             Settings.PREF_KEYPRESS_SOUND_VOLUME else null,
         Settings.PREF_SAVE_SUBTYPE_PER_APP,
@@ -129,9 +132,9 @@ fun createPreferencesSettings(context: Context) = listOf(
     },
     Setting(context, KeySounds.PREF_KEY_SOUND_PACK, R.string.key_sound_pack) {
         val items = listOf(
-            stringResource(R.string.key_sound_pack_soft) to KeySounds.PACK_SOFT,
-            stringResource(R.string.key_sound_pack_thock) to KeySounds.PACK_THOCK,
-            stringResource(R.string.key_sound_pack_clicky) to KeySounds.PACK_CLICKY,
+            stringResource(R.string.key_sound_pack_cream) to KeySounds.PACK_CREAM,
+            stringResource(R.string.key_sound_pack_mxblack) to KeySounds.PACK_MXBLACK,
+            stringResource(R.string.key_sound_pack_custom) to KeySounds.PACK_CUSTOM,
             stringResource(R.string.key_sound_pack_system) to KeySounds.PACK_SYSTEM,
         )
         val ctx = LocalContext.current
@@ -141,6 +144,10 @@ fun createPreferencesSettings(context: Context) = listOf(
             if (!KeySounds.play('a'.code, volume)) AudioAndHapticFeedbackManager.previewKeySound(ctx, volume)
         }
     },
+    Setting(context, KeySounds.PREF_CUSTOM_KEY, R.string.key_sound_custom_key) { CustomKeySoundPreference(it) },
+    Setting(context, KeySounds.PREF_CUSTOM_SPACE, R.string.key_sound_custom_space) { CustomKeySoundPreference(it) },
+    Setting(context, KeySounds.PREF_CUSTOM_DELETE, R.string.key_sound_custom_delete) { CustomKeySoundPreference(it) },
+    Setting(context, KeySounds.PREF_CUSTOM_ENTER, R.string.key_sound_custom_enter) { CustomKeySoundPreference(it) },
     Setting(context, Settings.PREF_SHOW_EMOJI_DESCRIPTIONS, R.string.show_emoji_descriptions) {
         SwitchPreferenceWithEmojiDictWarning(it, Defaults.PREF_SHOW_EMOJI_DESCRIPTIONS)
     },

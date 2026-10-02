@@ -352,9 +352,13 @@
     <string name="clipboard" tools:keep="@string/clipboard">Clipboard</string>
     <string name="meme_search" tools:keep="@string/meme_search" translatable="false">Meme search</string>
     <string name="key_sound_pack" translatable="false">Key sound</string>
-    <string name="key_sound_pack_soft" translatable="false">Soft</string>
-    <string name="key_sound_pack_thock" translatable="false">Thock</string>
-    <string name="key_sound_pack_clicky" translatable="false">Clicky (real switch · OpenClickSound by Nigh, CC BY-NC)</string>
+    <string name="key_sound_pack_cream" translatable="false">Cream (linear thock)</string>
+    <string name="key_sound_pack_mxblack" translatable="false">MX Black (linear)</string>
+    <string name="key_sound_pack_custom" translatable="false">Custom (your own files)</string>
+    <string name="key_sound_custom_key" translatable="false">Custom sound: keys</string>
+    <string name="key_sound_custom_space" translatable="false">Custom sound: space</string>
+    <string name="key_sound_custom_delete" translatable="false">Custom sound: delete</string>
+    <string name="key_sound_custom_enter" translatable="false">Custom sound: enter</string>
     <string name="key_sound_pack_system" translatable="false">System (old)</string>
     <string name="clear_clipboard" tools:keep="@string/clear_clipboard">Clear clipboard</string>
     <string name="voice" tools:keep="@string/voice">Voice input</string>

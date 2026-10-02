@@ -65,6 +65,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     override fun onReleaseKey(primaryCode: Int, withSliding: Boolean) {
         metaOnReleaseKey(primaryCode)
         keyboardSwitcher.onReleaseKey(primaryCode, withSliding, autoCapsState(), latinIME.currentRecapitalizeState)
+        if (!withSliding) audioAndHapticFeedbackManager.performReleaseAudioFeedback(primaryCode)
     }
 
     // while typing a meme search, the chat field's caps state is irrelevant
