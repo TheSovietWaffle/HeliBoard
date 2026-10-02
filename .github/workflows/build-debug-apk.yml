@@ -25,7 +25,15 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee build.log
+
+      # fork: surface compile errors as annotations (readable without downloading logs)
+      - name: Report build errors
+        if: failure()
+        run: |
+          grep -E "^e: |error:|What went wrong|> Task .* FAILED" -A2 build.log | head -40 | while IFS= read -r l; do echo "::error::${l}"; done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
