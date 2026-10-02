@@ -23,6 +23,7 @@ import android.view.View
 import android.view.View.OnLongClickListener
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
@@ -85,6 +86,9 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     private val moreSuggestionsContainer: View
     private val wordViews = ArrayList<TextView>()
+    // fork: last shown text per slot, so only words that actually changed get animated
+    private val lastWordTexts = arrayOfNulls<String>(SuggestedWords.MAX_SUGGESTIONS)
+    private val animInterpolator = DecelerateInterpolator(1.6f)
     private val debugInfoViews = ArrayList<TextView>()
     private val dividerViews = ArrayList<View>()
 
@@ -250,6 +254,43 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         )
         isExternalSuggestionVisible = false
         updateKeys()
+        animateChangedWords()
+    }
+
+    /** fork: Samsung-style smooth suggestions, changed words fade in and glide up into place */
+    private fun animateChangedWords() {
+        val animate = android.os.Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled()
+        val lift = 6.dpToPx(resources).toFloat()
+        var order = 0
+        wordViews.forEachIndexed { i, view ->
+            if (i >= lastWordTexts.size) return@forEachIndexed
+            val shown = view.parent != null && view.isShown
+            val text = if (shown) view.text?.toString() else null
+            if (text.isNullOrEmpty()) {
+                lastWordTexts[i] = null
+                return@forEachIndexed
+            }
+            val changed = text != lastWordTexts[i]
+            lastWordTexts[i] = text
+            view.animate().cancel()
+            if (!changed || !animate) {
+                view.alpha = 1f
+                view.translationY = 0f
+                view.scaleX = 1f
+                view.scaleY = 1f
+                return@forEachIndexed
+            }
+            view.alpha = 0.25f
+            view.translationY = lift
+            view.scaleX = 0.96f
+            view.scaleY = 0.96f
+            view.animate()
+                .alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
+                .setStartDelay(order++ * STAGGER_MS)
+                .setDuration(ANIM_MS)
+                .setInterpolator(animInterpolator)
+                .start()
+        }
     }
 
     fun setExternalSuggestionView(view: View?, addCloseButton: Boolean) {
@@ -481,6 +522,13 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     private fun clear() {
+        for (word in wordViews) { // don't leave a word half-faded if it gets reused
+            word.animate().cancel()
+            word.alpha = 1f
+            word.translationY = 0f
+            word.scaleX = 1f
+            word.scaleY = 1f
+        }
         suggestionsStrip.removeAllViews()
         if (DEBUG_SUGGESTIONS) removeAllDebugInfoViews()
         if (!toolbarContainer.isVisible)
@@ -553,5 +601,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         var DEBUG_SUGGESTIONS = false
         private const val DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.5f
         private val TAG = SuggestionStripView::class.java.simpleName
+        private const val ANIM_MS = 150L
+        private const val STAGGER_MS = 18L
     }
 }
