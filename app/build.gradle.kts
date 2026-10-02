@@ -9,6 +9,17 @@ plugins {
 android {
     compileSdk = 37
 
+    // fork: fixed debug key, so every CI build can update the previous one
+    // (otherwise each GitHub runner signs with a new random key and Android refuses the update)
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("meme-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "helium314.keyboard"
         minSdk = 21
