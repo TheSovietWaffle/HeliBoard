@@ -2,7 +2,6 @@
 package helium314.keyboard.settings.screens
 
 import android.content.Context
-import android.media.AudioManager
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -12,6 +11,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import helium314.keyboard.keyboard.KeyboardLayoutSet
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.latin.AudioAndHapticFeedbackManager
+import helium314.keyboard.latin.KeySounds
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.database.ClipboardDao
 import helium314.keyboard.latin.settings.Defaults
@@ -58,6 +58,8 @@ fun PreferencesScreen(
         if (prefs.getBoolean(Settings.PREF_VIBRATE_ON, Defaults.PREF_VIBRATE_ON))
             Settings.PREF_VIBRATE_IN_DND_MODE else null,
         Settings.PREF_SOUND_ON,
+        if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
+            KeySounds.PREF_KEY_SOUND_PACK else null,
         if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
             Settings.PREF_KEYPRESS_SOUND_VOLUME else null,
         Settings.PREF_SAVE_SUBTYPE_PER_APP,
@@ -124,6 +126,19 @@ fun createPreferencesSettings(context: Context) = listOf(
     },
     Setting(context, Settings.PREF_SOUND_ON, R.string.sound_on_keypress) {
         SwitchPreference(it, Defaults.PREF_SOUND_ON)
+    },
+    Setting(context, KeySounds.PREF_KEY_SOUND_PACK, R.string.key_sound_pack) {
+        val items = listOf(
+            stringResource(R.string.key_sound_pack_soft) to KeySounds.PACK_SOFT,
+            stringResource(R.string.key_sound_pack_thock) to KeySounds.PACK_THOCK,
+            stringResource(R.string.key_sound_pack_system) to KeySounds.PACK_SYSTEM,
+        )
+        val ctx = LocalContext.current
+        ListPreference(it, items, KeySounds.DEFAULT_PACK) { pack ->
+            KeySounds.update(ctx, pack)
+            val volume = ctx.prefs().getFloat(Settings.PREF_KEYPRESS_SOUND_VOLUME, Defaults.PREF_KEYPRESS_SOUND_VOLUME)
+            if (!KeySounds.play('a'.code, volume)) AudioAndHapticFeedbackManager.previewKeySound(ctx, volume)
+        }
     },
     Setting(context, Settings.PREF_SHOW_EMOJI_DESCRIPTIONS, R.string.show_emoji_descriptions) {
         SwitchPreferenceWithEmojiDictWarning(it, Defaults.PREF_SHOW_EMOJI_DESCRIPTIONS)
@@ -223,7 +238,7 @@ fun createPreferencesSettings(context: Context) = listOf(
         )
     },
     Setting(context, Settings.PREF_KEYPRESS_SOUND_VOLUME, R.string.prefs_keypress_sound_volume_settings) { setting ->
-        val audioManager = LocalContext.current.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val ctx = LocalContext.current
         SliderPreference(
             name = setting.title,
             key = setting.key,
@@ -233,7 +248,7 @@ fun createPreferencesSettings(context: Context) = listOf(
                 else (it * 100).toInt().toString()
             },
             range = -0.01f..1f,
-            onValueChanged = { it?.let { audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, it) } }
+            onValueChanged = { it?.let { AudioAndHapticFeedbackManager.previewKeySound(ctx, it) } }
         )
     },
 )

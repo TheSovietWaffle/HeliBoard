@@ -25,6 +25,7 @@ import helium314.keyboard.latin.settings.SettingsValues;
  */
 public final class AudioAndHapticFeedbackManager {
     private AudioManager mAudioManager;
+    private Context mContext;
     private Vibrator mVibrator;
 
     private SettingsValues mSettingsValues;
@@ -47,6 +48,7 @@ public final class AudioAndHapticFeedbackManager {
     }
 
     private void initInternal(final Context context) {
+        mContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
     }
@@ -89,6 +91,10 @@ public final class AudioAndHapticFeedbackManager {
         if (hapticEvent != HapticEvent.KEY_PRESS) {
             return;
         }
+        // fork: custom sound packs, falls back to the system sounds when "system" is selected
+        if (KeySounds.play(code, mSettingsValues.mKeypressSoundVolume)) {
+            return;
+        }
         final int sound = switch (code) {
             case KeyCode.DELETE -> AudioManager.FX_KEYPRESS_DELETE;
             case Constants.CODE_ENTER -> AudioManager.FX_KEYPRESS_RETURN;
@@ -121,6 +127,15 @@ public final class AudioAndHapticFeedbackManager {
     public void onSettingsChanged(final SettingsValues settingsValues) {
         mSettingsValues = settingsValues;
         mSoundOn = reevaluateIfSoundIsOn();
+        if (mContext != null) KeySounds.update(mContext);
+    }
+
+    /** fork: play a sample key sound, e.g. when changing the volume or the sound pack in settings */
+    public static void previewKeySound(final Context context, final float volume) {
+        KeySounds.update(context);
+        if (KeySounds.play('a', volume)) return;
+        final AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (am != null) am.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, volume);
     }
 
     public void onRingerModeChanged(boolean doNotDisturb) {

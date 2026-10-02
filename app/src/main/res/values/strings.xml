@@ -351,6 +351,10 @@
     <string name="cut" tools:keep="@string/cut" translatable="false">@android:string/cut</string>
     <string name="clipboard" tools:keep="@string/clipboard">Clipboard</string>
     <string name="meme_search" tools:keep="@string/meme_search" translatable="false">Meme search</string>
+    <string name="key_sound_pack" translatable="false">Key sound</string>
+    <string name="key_sound_pack_soft" translatable="false">Soft</string>
+    <string name="key_sound_pack_thock" translatable="false">Thock</string>
+    <string name="key_sound_pack_system" translatable="false">System (old)</string>
     <string name="clear_clipboard" tools:keep="@string/clear_clipboard">Clear clipboard</string>
     <string name="voice" tools:keep="@string/voice">Voice input</string>
     <string name="numpad" tools:keep="@string/numpad" translatable="false">@string/layout_numpad</string>
