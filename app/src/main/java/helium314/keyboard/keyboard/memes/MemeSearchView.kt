@@ -117,7 +117,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
     @SuppressLint("SetJavaScriptEnabled")
     fun start(query: String, heightPx: Int, editorInfo: EditorInfo?) {
         stop()
-        this.query = query.ifBlank { DEFAULT_QUERY }
+        this.query = query.trim()
         this.editorInfo = editorInfo
         applyColors()
         // "gif" in the query switches GIF mode on, otherwise remember the last choice
@@ -173,7 +173,9 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
     }
 
     // tbs=itp:animated is Google Images' "Type: Animated" filter
-    private fun searchUrl() = SEARCH_URL + URLEncoder.encode(query, "UTF-8") + if (gifMode) GIF_FILTER else ""
+    // no query: just open the Google Images start page
+    private fun searchUrl() = if (query.isBlank()) IMAGES_HOME
+        else SEARCH_URL + URLEncoder.encode(query, "UTF-8") + if (gifMode) GIF_FILTER else ""
 
     private fun setGifMode(on: Boolean, reload: Boolean) {
         val changed = on != gifMode
@@ -314,7 +316,8 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
     }
 
     private fun setLabel(status: String?) {
-        label.text = status ?: "🔍 $query  ✎  ·  tap to search · hold an image to send"
+        label.text = status ?: if (query.isBlank()) "🔍 Tap to search Google Images"
+            else "🔍 $query  ✎  ·  tap to search · hold an image to send"
     }
 
     private fun applyColors() {
@@ -335,7 +338,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         private const val TAG = "MemeSearchView"
         private const val HEADER_DP = 40
         private const val MIN_WEB_DP = 180
-        private const val DEFAULT_QUERY = "meme"
+        private const val IMAGES_HOME = "https://www.google.com/imghp"
         private const val MAX_BYTES = 20 * 1024 * 1024
         private const val KEEP_FILES = 10
         // udm=2 is Google's "Images" tab
