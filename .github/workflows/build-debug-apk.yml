@@ -2,6 +2,8 @@ name: Build debug APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ meme-search ] # fork: build an APK on every push
 
 jobs:
   build:
