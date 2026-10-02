@@ -62,7 +62,7 @@ fun PreferencesScreen(
         if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
             KeySounds.PREF_KEY_SOUND_PACK else null,
         *(if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON)
-            && KeySounds.currentPack(prefs) == KeySounds.PACK_CUSTOM) KeySounds.CUSTOM_SLOTS.toTypedArray() else emptyArray()),
+            && KeySounds.currentPack(prefs) == KeySounds.PACK_CUSTOM) KeySounds.CUSTOM_SLOTS.toTypedArray() else emptyArray<String>()),
         if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
             Settings.PREF_KEYPRESS_SOUND_VOLUME else null,
         Settings.PREF_SAVE_SUBTYPE_PER_APP,
