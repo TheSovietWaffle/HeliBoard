@@ -23,7 +23,6 @@ import android.view.View
 import android.view.View.OnLongClickListener
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
-import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
@@ -86,11 +85,6 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     private val moreSuggestionsContainer: View
     private val wordViews = ArrayList<TextView>()
-    // fork: Samsung-style morphing suggestions. Old words are snapshotted before the strip is rebuilt,
-    // then crossfaded out on the strip's overlay while the new words fade in at the same spot.
-    private class WordSnapshot(val text: String, val bitmap: android.graphics.Bitmap, val bounds: android.graphics.Rect)
-    private val activeFades = ArrayList<android.animation.ValueAnimator>()
-    private val morphInterpolator = DecelerateInterpolator()
     private val debugInfoViews = ArrayList<TextView>()
     private val dividerViews = ArrayList<View>()
 
@@ -102,7 +96,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         val colors = Settings.getValues().mColors
         colors.setBackground(this, ColorType.STRIP_BACKGROUND)
         repeat(SuggestedWords.MAX_SUGGESTIONS) {
-            val word = TextView(context, null, R.attr.suggestionWordStyle)
+            val word = MorphTextView(context, null, R.attr.suggestionWordStyle) // fork: letter-by-letter morph
             word.contentDescription = resources.getString(R.string.spoken_empty_suggestion)
             word.setOnClickListener(this)
             word.setOnLongClickListener(this)
@@ -248,7 +242,6 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     fun setSuggestions(suggestions: SuggestedWords, isRtlLanguage: Boolean) {
-        val snapshots = snapshotWords()
         clear()
         setRtl(isRtlLanguage)
         suggestedWords = suggestions
@@ -257,85 +250,6 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         )
         isExternalSuggestionVisible = false
         updateKeys()
-        morphWords(snapshots)
-    }
-
-    private fun animationsEnabled() =
-        android.os.Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled()
-
-    /** captures what each suggestion slot shows right now, before the strip is cleared */
-    private fun snapshotWords(): Array<WordSnapshot?> {
-        val result = arrayOfNulls<WordSnapshot>(wordViews.size)
-        if (!animationsEnabled() || !suggestionsStrip.isShown) return result
-        val stripLoc = IntArray(2)
-        val loc = IntArray(2)
-        suggestionsStrip.getLocationInWindow(stripLoc)
-        wordViews.forEachIndexed { i, view ->
-            val text = view.text?.toString()
-            if (view.parent == null || !view.isShown || view.width <= 0 || view.height <= 0 || text.isNullOrEmpty())
-                return@forEachIndexed
-            try {
-                val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
-                view.draw(android.graphics.Canvas(bitmap))
-                view.getLocationInWindow(loc)
-                val x = loc[0] - stripLoc[0]
-                val y = loc[1] - stripLoc[1]
-                result[i] = WordSnapshot(text, bitmap, android.graphics.Rect(x, y, x + view.width, y + view.height))
-            } catch (e: Exception) {
-                // out of memory or similar: just skip the morph for this word
-            }
-        }
-        return result
-    }
-
-    /** crossfades old words into new ones in place; unchanged words don't move at all */
-    private fun morphWords(old: Array<WordSnapshot?>) {
-        if (!animationsEnabled()) return
-        wordViews.forEachIndexed { i, view ->
-            val before = old.getOrNull(i)
-            val shown = view.parent != null && view.isShown
-            val text = if (shown) view.text?.toString() else null
-            if (before == null) {
-                // nothing was here: soft fade in
-                if (!text.isNullOrEmpty()) fadeIn(view)
-                return@forEachIndexed
-            }
-            if (text == before.text) {
-                before.bitmap.recycle()
-                return@forEachIndexed
-            }
-            fadeOutSnapshot(before)
-            if (!text.isNullOrEmpty()) fadeIn(view)
-        }
-    }
-
-    private fun fadeIn(view: View) {
-        view.animate().cancel()
-        view.alpha = 0f
-        view.animate().alpha(1f).setDuration(MORPH_MS).setInterpolator(morphInterpolator).start()
-    }
-
-    private fun fadeOutSnapshot(snapshot: WordSnapshot) {
-        val drawable = android.graphics.drawable.BitmapDrawable(resources, snapshot.bitmap)
-        drawable.bounds = snapshot.bounds
-        val overlay = suggestionsStrip.overlay
-        overlay.add(drawable)
-        val animator = android.animation.ValueAnimator.ofInt(255, 0)
-        animator.duration = MORPH_MS
-        animator.interpolator = morphInterpolator
-        animator.addUpdateListener {
-            drawable.alpha = it.animatedValue as Int
-            suggestionsStrip.invalidate(snapshot.bounds)
-        }
-        animator.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationEnd(animation: android.animation.Animator) {
-                overlay.remove(drawable)
-                activeFades.remove(animator)
-                suggestionsStrip.invalidate()
-            }
-        })
-        activeFades.add(animator)
-        animator.start()
     }
 
     fun setExternalSuggestionView(view: View?, addCloseButton: Boolean) {
@@ -567,12 +481,6 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     private fun clear() {
-        // finish any running morph right away (removes old overlays), and don't leave words half-faded
-        ArrayList(activeFades).forEach { it.end() }
-        for (word in wordViews) {
-            word.animate().cancel()
-            word.alpha = 1f
-        }
         suggestionsStrip.removeAllViews()
         if (DEBUG_SUGGESTIONS) removeAllDebugInfoViews()
         if (!toolbarContainer.isVisible)
@@ -645,6 +553,5 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         var DEBUG_SUGGESTIONS = false
         private const val DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.5f
         private val TAG = SuggestionStripView::class.java.simpleName
-        private const val MORPH_MS = 140L
     }
 }
