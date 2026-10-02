@@ -42,6 +42,9 @@ import java.net.URLEncoder
  *
  * The WebView only exists while the panel is open, and is destroyed on close to free RAM.
  * It is not focusable, so Google's own search box can't grab the keyboard (an IME can't type into itself).
+ * Instead, tapping the header or Google's search box asks KeyboardSwitcher for "typing mode":
+ * this panel hides (WebView kept alive), the keys come back with a [MemeQueryBar] above them,
+ * and Enter calls [search] with the new query.
  */
 class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(context, attrs) {
 
@@ -57,6 +60,9 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
 
     /** set by KeyboardSwitcher, called when the panel wants to be closed */
     var onCloseRequested: Runnable? = null
+
+    /** set by KeyboardSwitcher, called with the current query when the user wants to type a new search */
+    var onTypeRequested: androidx.core.util.Consumer<String>? = null
 
     init {
         orientation = VERTICAL
@@ -79,6 +85,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(8), 0, dp(8), 0)
+            setOnClickListener { onTypeRequested?.accept(this@MemeSearchView.query) }
         }
         header.addView(backButton, LayoutParams(dp(HEADER_DP), dp(HEADER_DP)))
         header.addView(label, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
@@ -120,10 +127,15 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         }
         wv.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
-                !isWebUrl(request.url)
+                handleUrl(request.url)
 
             @Deprecated("needed for API < 24")
-            override fun shouldOverrideUrlLoading(view: WebView, url: String) = !isWebUrl(Uri.parse(url))
+            override fun shouldOverrideUrlLoading(view: WebView, url: String) = handleUrl(Uri.parse(url))
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                // route taps on Google's own search box to our typing mode
+                view.evaluateJavascript(HOOK_SEARCH_BOX_JS, null)
+            }
         }
         wv.setOnLongClickListener { handleLongPress(wv) }
 
@@ -131,6 +143,24 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         addView(wv, LayoutParams(LayoutParams.MATCH_PARENT, webHeight))
         webView = wv
         wv.loadUrl(SEARCH_URL + URLEncoder.encode(this.query, "UTF-8"))
+    }
+
+    /** load a new search in the existing WebView */
+    fun search(newQuery: String) {
+        if (newQuery.isBlank()) return
+        query = newQuery
+        setLabel(null)
+        webView?.loadUrl(SEARCH_URL + URLEncoder.encode(query, "UTF-8"))
+    }
+
+    /** @return true if the WebView should NOT load this url */
+    private fun handleUrl(uri: Uri): Boolean {
+        if (uri.scheme == TYPE_SCHEME) {
+            val prefill = uri.getQueryParameter("q")?.takeIf { it.isNotBlank() } ?: query
+            post { onTypeRequested?.accept(prefill) }
+            return true
+        }
+        return !isWebUrl(uri)
     }
 
     fun stop() {
@@ -210,7 +240,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
     }
 
     private fun setLabel(status: String?) {
-        label.text = status ?: "🔍 $query  ·  hold an image to send"
+        label.text = status ?: "🔍 $query  ✎  ·  tap to search · hold an image to send"
     }
 
     private fun applyColors() {
@@ -235,6 +265,18 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         private const val KEEP_FILES = 10
         // udm=2 is Google's "Images" tab
         private const val SEARCH_URL = "https://www.google.com/search?udm=2&q="
+        private const val TYPE_SCHEME = "memesearch"
+        private const val HOOK_SEARCH_BOX_JS = """(function(){
+            if (window.__memeHooked) return; window.__memeHooked = true;
+            var handler = function(e){
+                var t = e.target && e.target.closest && e.target.closest('input[name=q],textarea[name=q]');
+                if (!t) return;
+                e.preventDefault(); e.stopPropagation();
+                location.href = 'memesearch://type?q=' + encodeURIComponent(t.value || '');
+            };
+            document.addEventListener('click', handler, true);
+            document.addEventListener('touchend', handler, true);
+        })();"""
 
         private fun isWebUrl(uri: Uri) = uri.scheme == "https" || uri.scheme == "http"
 

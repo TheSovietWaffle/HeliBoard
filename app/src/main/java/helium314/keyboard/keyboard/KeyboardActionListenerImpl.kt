@@ -52,7 +52,7 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onPressKey(primaryCode: Int, repeatCount: Int, pointerCount: Int, hapticEvent: HapticEvent) {
         metaOnPressKey(primaryCode)
-        keyboardSwitcher.onPressKey(primaryCode, pointerCount, latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+        keyboardSwitcher.onPressKey(primaryCode, pointerCount, autoCapsState(), latinIME.currentRecapitalizeState)
         // we need to use LatinIME for handling of key-down audio and haptics
         latinIME.hapticAndAudioFeedback(primaryCode, repeatCount, hapticEvent)
     }
@@ -64,8 +64,12 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun onReleaseKey(primaryCode: Int, withSliding: Boolean) {
         metaOnReleaseKey(primaryCode)
-        keyboardSwitcher.onReleaseKey(primaryCode, withSliding, latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+        keyboardSwitcher.onReleaseKey(primaryCode, withSliding, autoCapsState(), latinIME.currentRecapitalizeState)
     }
+
+    // while typing a meme search, the chat field's caps state is irrelevant
+    private fun autoCapsState() =
+        if (keyboardSwitcher.isMemeTyping) Constants.TextUtils.CAP_MODE_OFF else latinIME.currentAutoCapsState
 
     override fun onKeyUp(keyCode: Int, keyEvent: KeyEvent): Boolean {
         emojiAltPhysicalKeyDetector.onKeyUp(keyEvent)
@@ -149,16 +153,39 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 //            else Event.createSoftwareKeypressEvent(primaryCode, metaState, mkv.getKeyX(x), mkv.getKeyY(y), isKeyRepeat)
             Event.createSoftwareKeypressEvent(primaryCode, metaState, mkv.getKeyX(x), mkv.getKeyY(y), isKeyRepeat)
         }
+        if (keyboardSwitcher.isMemeTyping && handleMemeTypingCode(primaryCode)) {
+            // let the keyboard state see the key (releases one-shot shift), but with no auto-caps from the app
+            keyboardSwitcher.onEvent(event, Constants.TextUtils.CAP_MODE_OFF, null)
+            return
+        }
         latinIME.onEvent(event)
         metaAfterCodeInput(primaryCode)
     }
 
-    override fun onTextInput(text: String?) = latinIME.onTextInput(text)
+    /** @return true if the code was consumed by the meme query bar (or swallowed so it can't reach the app) */
+    private fun handleMemeTypingCode(code: Int): Boolean = when {
+        code == Constants.CODE_ENTER -> { keyboardSwitcher.finishMemeTyping(true); true }
+        code == KeyCode.DELETE -> { keyboardSwitcher.memeTypingDelete(); true }
+        code > 0 -> { keyboardSwitcher.memeTypingAppend(String(Character.toChars(code))); true }
+        code in memeTypingPassthroughCodes -> false // layout switching etc. works as usual
+        else -> true // swallow cursor moves, paste, select all... so nothing touches the chat field
+    }
+
+    private val memeTypingPassthroughCodes = setOf(KeyCode.SHIFT, KeyCode.CAPS_LOCK, KeyCode.SYMBOL, KeyCode.ALPHA,
+        KeyCode.SYMBOL_ALPHA, KeyCode.LANGUAGE_SWITCH, KeyCode.SETTINGS, KeyCode.EMOJI, KeyCode.CLIPBOARD, KeyCode.NUMPAD)
+
+    override fun onTextInput(text: String?) {
+        if (keyboardSwitcher.isMemeTyping) {
+            if (!text.isNullOrEmpty()) keyboardSwitcher.memeTypingAppend(text)
+            return
+        }
+        latinIME.onTextInput(text)
+    }
 
     // fork: meme search. The selected text, or else the current line before the cursor, is the query.
     // It gets removed from the text field, so you type "drake meme", press the button, and it's gone.
     private fun toggleMemeSearch() {
-        if (keyboardSwitcher.isShowingMemeSearch) {
+        if (keyboardSwitcher.isShowingMemeSearch || keyboardSwitcher.isMemeTyping) {
             keyboardSwitcher.hideMemeSearch()
             return
         }
@@ -193,13 +220,14 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
         }
     }
 
-    override fun onStartBatchInput() = latinIME.onStartBatchInput()
+    // gesture typing would commit into the chat field, so it's ignored while typing a meme search
+    override fun onStartBatchInput() { if (!keyboardSwitcher.isMemeTyping) latinIME.onStartBatchInput() }
 
-    override fun onUpdateBatchInput(batchPointers: InputPointers?) = latinIME.onUpdateBatchInput(batchPointers)
+    override fun onUpdateBatchInput(batchPointers: InputPointers?) { if (!keyboardSwitcher.isMemeTyping) latinIME.onUpdateBatchInput(batchPointers) }
 
-    override fun onEndBatchInput(batchPointers: InputPointers?) = latinIME.onEndBatchInput(batchPointers)
+    override fun onEndBatchInput(batchPointers: InputPointers?) { if (!keyboardSwitcher.isMemeTyping) latinIME.onEndBatchInput(batchPointers) }
 
-    override fun onCancelBatchInput() = latinIME.onCancelBatchInput()
+    override fun onCancelBatchInput() { if (!keyboardSwitcher.isMemeTyping) latinIME.onCancelBatchInput() }
 
     // User released a finger outside any key
     override fun onCancelInput() { }

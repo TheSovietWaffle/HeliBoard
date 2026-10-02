@@ -34,6 +34,8 @@ import androidx.annotation.Nullable;
 
 import helium314.keyboard.event.Event;
 import helium314.keyboard.keyboard.clipboard.ClipboardHistoryView;
+import helium314.keyboard.keyboard.memes.MemeQueryBar;
+import helium314.keyboard.latin.common.Constants;
 import helium314.keyboard.keyboard.memes.MemeSearchView;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
 import helium314.keyboard.keyboard.internal.KeyboardState;
@@ -78,6 +80,8 @@ public final class KeyboardSwitcher {
     private FrameLayout mStripContainer;
     private ClipboardHistoryView mClipboardHistoryView;
     private MemeSearchView mMemeSearchView;
+    private MemeQueryBar mMemeQueryBar;
+    private boolean mMemeTyping;
     private TextView mFakeToastView;
     private ImageView mBackgroundGatheringIndicator;
     private LatinIME mLatinIME;
@@ -251,7 +255,8 @@ public final class KeyboardSwitcher {
 
     public void hideMemeSearch() {
         // check visibility, not isShown(): after sending, the app may already have hidden our window
-        if (mMemeSearchView == null || mMemeSearchView.getVisibility() != View.VISIBLE) return;
+        if (mMemeSearchView == null) return;
+        if (!mMemeTyping && mMemeSearchView.getVisibility() != View.VISIBLE) return;
         stopMemeSearchView();
         mKeyboardView.setVisibility(View.VISIBLE);
         if (mLatinIME.hasSuggestionStripView())
@@ -259,9 +264,61 @@ public final class KeyboardSwitcher {
     }
 
     private void stopMemeSearchView() {
+        endMemeTypingUi();
         if (mMemeSearchView == null) return;
         mMemeSearchView.stop();
         mMemeSearchView.setVisibility(View.GONE);
+    }
+
+    // typing mode: results hidden (WebView kept alive), normal keys shown, query bar in the strip area
+    public boolean isMemeTyping() {
+        return mMemeTyping;
+    }
+
+    public void startMemeTyping(@NonNull String initial) {
+        if (mMemeSearchView == null || mStripContainer == null) return;
+        int barHeight = mStripContainer.getHeight();
+        if (barHeight <= 0) barHeight = (int) (40 * mThemeContext.getResources().getDisplayMetrics().density);
+        if (mMemeQueryBar == null) {
+            mMemeQueryBar = new MemeQueryBar(mThemeContext);
+            mMemeQueryBar.setOnDone(this::finishMemeTyping);
+            mStripContainer.addView(mMemeQueryBar);
+        }
+        mMemeQueryBar.setLayoutParams(new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, barHeight));
+        mMemeTyping = true;
+        mState.onResetKeyboardStateToAlphabet(Constants.TextUtils.CAP_MODE_OFF, null);
+        mMemeQueryBar.start(initial);
+        mMemeQueryBar.setVisibility(View.VISIBLE);
+        mSuggestionStripView.setVisibility(View.GONE);
+        mStripContainer.setVisibility(View.VISIBLE);
+        mMemeSearchView.setVisibility(View.GONE);
+        mKeyboardView.setVisibility(View.VISIBLE);
+    }
+
+    public void memeTypingAppend(@NonNull CharSequence text) {
+        if (mMemeTyping && mMemeQueryBar != null) mMemeQueryBar.append(text);
+    }
+
+    public void memeTypingDelete() {
+        if (mMemeTyping && mMemeQueryBar != null) mMemeQueryBar.deleteLast();
+    }
+
+    /** @param search true: run the typed query, false: just go back to the current results */
+    public void finishMemeTyping(boolean search) {
+        if (!mMemeTyping) return;
+        final String query = mMemeQueryBar != null ? mMemeQueryBar.getQuery() : "";
+        endMemeTypingUi();
+        if (mLatinIME.hasSuggestionStripView())
+            mSuggestionStripView.setVisibility(View.VISIBLE);
+        mKeyboardView.setVisibility(View.GONE);
+        mMemeSearchView.setVisibility(View.VISIBLE);
+        if (search) mMemeSearchView.search(query);
+    }
+
+    /** hides the query bar only; callers decide what else becomes visible */
+    private void endMemeTypingUi() {
+        mMemeTyping = false;
+        if (mMemeQueryBar != null) mMemeQueryBar.setVisibility(View.GONE);
     }
 
     public boolean isImeSuppressedByHardwareKeyboard(
@@ -290,7 +347,16 @@ public final class KeyboardSwitcher {
         mSuggestionStripView.setVisibility(stripVisibility);
         mClipboardHistoryView.setVisibility(View.GONE);
         mClipboardHistoryView.stopClipboardHistory();
-        stopMemeSearchView();
+        if (mMemeTyping) {
+            // layout switch (shift, ?123) while typing a meme search: keep the query bar instead of suggestions
+            mSuggestionStripView.setVisibility(View.GONE);
+            mStripContainer.setVisibility(View.VISIBLE);
+        } else if (mMemeSearchView != null && mMemeSearchView.getVisibility() == View.VISIBLE && visibility == View.VISIBLE) {
+            // e.g. auto-shift after the query was removed from the text field: keep the meme panel open
+            mKeyboardView.setVisibility(View.GONE);
+        } else {
+            stopMemeSearchView();
+        }
     }
 
     public void toggleLayout(@NonNull LayoutDirective.Utility layout, int autoCapsFlags, @Nullable RecapitalizeMode recapitalizeMode) {
@@ -599,6 +665,9 @@ public final class KeyboardSwitcher {
         mMemeSearchView = mCurrentInputView.findViewById(R.id.meme_search_view);
         mMemeSearchView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
         mMemeSearchView.setOnCloseRequested(this::hideMemeSearch);
+        mMemeSearchView.setOnTypeRequested(this::startMemeTyping);
+        mMemeQueryBar = null; // belonged to the old strip container
+        mMemeTyping = false;
         mFakeToastView = mCurrentInputView.findViewById(R.id.fakeToast);
 
         mKeyboardViewWrapper = mCurrentInputView.findViewById(R.id.keyboard_view_wrapper);
