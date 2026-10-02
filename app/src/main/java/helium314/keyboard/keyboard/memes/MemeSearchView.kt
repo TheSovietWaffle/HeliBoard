@@ -2,7 +2,10 @@
 package helium314.keyboard.keyboard.memes
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.ClipDescription
+import android.content.Intent
 import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
@@ -28,6 +31,7 @@ import helium314.keyboard.latin.R
 import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.Log
+import helium314.keyboard.latin.utils.prefs
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
@@ -56,6 +60,8 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
     private var listener: KeyboardActionListener? = null
     private var editorInfo: EditorInfo? = null
     private var query = ""
+    private var gifMode = false
+    private val gifButton: TextView
     @Volatile private var busy = false
 
     /** set by KeyboardSwitcher, called when the panel wants to be closed */
@@ -87,8 +93,18 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
             setPadding(dp(8), 0, dp(8), 0)
             setOnClickListener { onTypeRequested?.accept(this@MemeSearchView.query) }
         }
+        gifButton = TextView(context).apply {
+            text = "GIF"
+            typeface = Typeface.DEFAULT_BOLD
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            contentDescription = "Toggle GIF mode"
+            setOnClickListener { setGifMode(!gifMode, reload = true) }
+        }
         header.addView(backButton, LayoutParams(dp(HEADER_DP), dp(HEADER_DP)))
         header.addView(label, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(gifButton, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         header.addView(closeButton, LayoutParams(dp(HEADER_DP), dp(HEADER_DP)))
         addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(HEADER_DP)))
     }
@@ -104,6 +120,8 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         this.query = query.ifBlank { DEFAULT_QUERY }
         this.editorInfo = editorInfo
         applyColors()
+        // "gif" in the query switches GIF mode on, otherwise remember the last choice
+        setGifMode(context.prefs().getBoolean(PREF_GIF_MODE, false) || hasGifWord(this.query), reload = false)
         setLabel(null)
 
         val wv = try {
@@ -142,15 +160,36 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         val webHeight = (heightPx - dp(HEADER_DP)).coerceAtLeast(dp(MIN_WEB_DP))
         addView(wv, LayoutParams(LayoutParams.MATCH_PARENT, webHeight))
         webView = wv
-        wv.loadUrl(SEARCH_URL + URLEncoder.encode(this.query, "UTF-8"))
+        wv.loadUrl(searchUrl())
     }
 
     /** load a new search in the existing WebView */
     fun search(newQuery: String) {
         if (newQuery.isBlank()) return
         query = newQuery
+        if (hasGifWord(query) && !gifMode) setGifMode(true, reload = false)
         setLabel(null)
-        webView?.loadUrl(SEARCH_URL + URLEncoder.encode(query, "UTF-8"))
+        webView?.loadUrl(searchUrl())
+    }
+
+    // tbs=itp:animated is Google Images' "Type: Animated" filter
+    private fun searchUrl() = SEARCH_URL + URLEncoder.encode(query, "UTF-8") + if (gifMode) GIF_FILTER else ""
+
+    private fun setGifMode(on: Boolean, reload: Boolean) {
+        val changed = on != gifMode
+        gifMode = on
+        context.prefs().edit().putBoolean(PREF_GIF_MODE, on).apply()
+        styleGifButton()
+        if (reload && changed) webView?.loadUrl(searchUrl())
+    }
+
+    private fun styleGifButton() {
+        val colors = Settings.getValues()?.mColors
+        val textColor = colors?.get(ColorType.KEY_TEXT) ?: 0xFFFFFFFF.toInt()
+        gifButton.setTextColor(textColor)
+        gifButton.alpha = if (gifMode) 1f else 0.4f
+        gifButton.paintFlags = if (gifMode) gifButton.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            else gifButton.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
     }
 
     /** @return true if the WebView should NOT load this url */
@@ -202,6 +241,11 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
 
     private fun fetchAndSend(url: String) {
         if (busy) return
+        if (gifMode && isGoogleThumbnail(url)) {
+            // grid thumbnails are always static JPEGs, only the opened preview has the real GIF
+            toast("That's the still preview. Tap it, wait till it moves, then hold it")
+            return
+        }
         busy = true
         setLabel("Grabbing image…")
         val appContext = context.applicationContext
@@ -230,12 +274,42 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         val accepted = editorInfo?.let { EditorInfoCompat.getContentMimeTypes(it) } ?: emptyArray()
         val content = InputContentInfoCompat(uri, ClipDescription("meme", arrayOf(mime)), null)
         if (accepted.isNotEmpty() && accepted.none { ClipDescription.compareMimeTypes(mime, it) }) {
+            // the app doesn't take this type from keyboards (common for GIFs): hand it over via the share sheet
             setLabel(null)
-            toast("This app doesn't accept $mime")
+            shareFallback(uri, mime)
             return
         }
         // if the app declares no types, HeliBoard falls back to pasting via clipboard
         l.onContent(content)
+        onCloseRequested?.run()
+    }
+
+    private fun shareFallback(uri: Uri, mime: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri("meme", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pkg = editorInfo?.packageName
+        toast("This app blocks ${mime.substringAfter('/').uppercase()} from keyboards, sharing instead")
+        try {
+            // straight to the chat app if possible, otherwise the system share sheet
+            context.startActivity(Intent(send).setPackage(pkg))
+        } catch (_: ActivityNotFoundException) {
+            try {
+                context.startActivity(Intent.createChooser(send, "Send with…")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            } catch (e: Exception) {
+                Log.w(TAG, "share failed", e)
+                toast("Couldn't share it either, sorry")
+                return
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "share failed", e)
+            toast("Couldn't share it either, sorry")
+            return
+        }
         onCloseRequested?.run()
     }
 
@@ -250,6 +324,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         label.typeface = Typeface.DEFAULT
         colors.setColor(backButton, ColorType.TOOL_BAR_KEY)
         colors.setColor(closeButton, ColorType.TOOL_BAR_KEY)
+        styleGifButton()
     }
 
     private fun toast(text: String) = KeyboardSwitcher.getInstance().showToast(text, true)
@@ -266,6 +341,19 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         // udm=2 is Google's "Images" tab
         private const val SEARCH_URL = "https://www.google.com/search?udm=2&q="
         private const val TYPE_SCHEME = "memesearch"
+        private const val GIF_FILTER = "&tbs=itp:animated"
+        private const val PREF_GIF_MODE = "meme_search_gif_mode"
+
+        private fun hasGifWord(q: String) = Regex("\\bgifs?\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+
+        private fun isGoogleThumbnail(url: String) = url.startsWith("data:") ||
+            Uri.parse(url).host?.let { it.startsWith("encrypted-tbn") || it.endsWith(".gstatic.com") } == true
+
+        /** GIPHY serves WebP for .webp links, ask for the real GIF instead */
+        private fun preferGif(url: String): String {
+            val host = Uri.parse(url).host ?: return url
+            return if (host.endsWith("giphy.com") && url.contains(".webp")) url.replace(".webp", ".gif") else url
+        }
         private const val HOOK_SEARCH_BOX_JS = """(function(){
             if (window.__memeHooked) return; window.__memeHooked = true;
             var handler = function(e){
@@ -291,7 +379,7 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
         }
 
         private fun download(url: String): Pair<ByteArray, String?> {
-            var current = url
+            var current = preferGif(url)
             repeat(5) { // follow redirects manually, HttpURLConnection won't switch http <-> https
                 val conn = URL(current).openConnection() as HttpURLConnection
                 try {
@@ -299,7 +387,9 @@ class MemeSearchView(context: Context, attrs: AttributeSet?) : LinearLayout(cont
                     conn.readTimeout = 15_000
                     conn.instanceFollowRedirects = false
                     conn.setRequestProperty("User-Agent", USER_AGENT)
-                    conn.setRequestProperty("Accept", "image/*,*/*;q=0.8")
+                    // no webp in Accept: GIF hosts would otherwise send animated WebP, which most chat apps can't take
+                    conn.setRequestProperty("Accept", "image/gif,image/png,image/jpeg;q=0.9,image/*;q=0.5,*/*;q=0.1")
+                    conn.setRequestProperty("Referer", "https://www.google.com/") // some hosts block hotlinking without it
                     val code = conn.responseCode
                     if (code in 300..399) {
                         current = URL(URL(current), conn.getHeaderField("Location")).toString()
